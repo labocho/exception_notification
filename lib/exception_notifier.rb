@@ -34,17 +34,25 @@ class ExceptionNotifier
   def call(env)
     @app.call(env)
   rescue Exception => exception
-    options = (env['exception_notifier.options'] ||= Notifier.default_options)
-    options.reverse_merge!(@options)
+    begin
+      options = (env['exception_notifier.options'] ||= Notifier.default_options)
+      options.reverse_merge!(@options)
 
-    unless ignored_exception(options[:ignore_exceptions], exception)       ||
-           from_crawler(options[:ignore_crawlers], env['HTTP_USER_AGENT']) ||
-           conditionally_ignored(options[:ignore_if], env, exception)
-      Notifier.exception_notification(env, exception).deliver
-      env['exception_notifier.delivered'] = true
+      unless ignored_exception(options[:ignore_exceptions], exception)       ||
+             from_crawler(options[:ignore_crawlers], env['HTTP_USER_AGENT']) ||
+             conditionally_ignored(options[:ignore_if], env, exception)
+        Notifier.exception_notification(env, exception).deliver
+        env['exception_notifier.delivered'] = true
+      end
+    # If delivery failed, print information of own exception and re-raise original exception
+    rescue Exception
+      STDERR.puts "!!! Exception raised during delivering exception notification !!!"
+      STDERR.puts "#{$!.class} (#{$!.message}):"
+      STDERR.puts $!.backtrace.map{|t| "  #{t}"}.join("\n")
+      STDERR.puts
+    ensure
+      raise exception
     end
-
-    raise exception
   end
 
   private

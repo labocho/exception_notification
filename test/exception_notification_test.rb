@@ -62,4 +62,35 @@ class ExceptionNotificationTest < ActiveSupport::TestCase
   test "should have normalize_subject false by default" do
     assert ExceptionNotifier::Notifier.default_options[:normalize_subject] == false
   end
+
+  test "should raise original exception when delivery failed" do
+    class OriginalError < RuntimeError; end
+    rails_rack = stub
+    rails_rack.expects(:call).
+      raises(OriginalError, "Original exception")
+
+    mail = stub
+    mail.expects(:deliver).
+      raises(RuntimeError, "Delivery exception")
+    ExceptionNotifier::Notifier.expects(:exception_notification).returns(mail)
+
+    STDERR.expects(:puts).at_least_once # ignore stderr output
+
+    # copy default options
+    options = %w(
+      email_prefix
+      sender_address
+      exception_recipients
+      sections
+      background_sections
+    ).inject({}){|h, n|
+      h[n.to_sym] = ExceptionNotifier::Notifier.send("default_#{n}")
+      h
+    }
+
+    app = ExceptionNotifier.new(rails_rack, options)
+    assert_raise(OriginalError) do
+      app.call({})
+    end
+  end
 end
